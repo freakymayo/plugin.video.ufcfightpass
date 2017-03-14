@@ -183,14 +183,26 @@ def build_menu(items):
     is_folder = 'id' not in first.keys()
 
     for i in items:
-        thumb = i['thumb'] if not is_folder else None
+        try:
+            poster = i['thumb'].replace('es', 'ep')
+            scs = i['thumb']
+        except KeyError:
+            pass
+        try:
+            thumb = poster if not is_folder else None
+        except KeyError:
+            thumb = scs if not is_folder else None
+        try:
+            program = i['program'].encode('utf-8')
+        except KeyError:
+            pass
         # stupid encoding hack for now..
         try:
             i_title = i['title'].encode('utf-8')
         except:
             i_title = i['title']
-
-        title = '[B][{0}][/B]  {1}'.format(i['airdate'], i_title) if not is_folder else i_title
+            
+        title = '[B][{0}][/B]  {1}'.format(i['airdate'], program + ' ' + i_title) if not is_folder else i_title
         item = xbmcgui.ListItem(label=title, thumbnailImage=thumb) 
 
         if is_folder:
@@ -249,7 +261,7 @@ def get_parsed_subs(data):
 def get_parsed_vids(data):
     #print('UFCFP: get_parsed_vids:')
     #print(data)
-    img_base_url = 'https://neulionmdnyc-a.akamaihd.net/u/ufc/thumbs/'
+    img_base_url = 'https://neulionmdnyc-a.akamaihd.net/u/ufc/thumbs/' 
     v_list = []
     for v in data['programs']:
         v_list.append({
@@ -257,7 +269,8 @@ def get_parsed_vids(data):
             'title': v['name'], 
             'thumb': img_base_url + v['image'], 
             'airdate': datetime.datetime.strftime(parse_date(v['releaseDate'], '%Y-%m-%dT%H:%M:%S.%f'), '%Y-%m-%d'), 
-            'plot': v['description']
+            'plot': v['description'],
+            'program' : v['programCode']
         })
             
     return v_list
