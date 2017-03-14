@@ -192,15 +192,19 @@ def build_menu(items):
             thumb = poster if not is_folder else None
         except KeyError:
             thumb = scs if not is_folder else None
-        try:
-            program = i['program'].encode('utf-8')
-        except KeyError:
-            pass
         # stupid encoding hack for now..
         try:
             i_title = i['title'].encode('utf-8')
         except:
             i_title = i['title']
+        try:
+            if i['program'] in i['title']:
+                program = ''
+            else:
+                program = i['program'].encode('utf-8')
+        except KeyError:
+            program = ''    
+        
             
         title = '[B][{0}][/B]  {1}'.format(i['airdate'], program + ' ' + i_title) if not is_folder else i_title
         item = xbmcgui.ListItem(label=title, thumbnailImage=thumb) 
@@ -270,7 +274,7 @@ def get_parsed_vids(data):
             'thumb': img_base_url + v['image'], 
             'airdate': datetime.datetime.strftime(parse_date(v['releaseDate'], '%Y-%m-%dT%H:%M:%S.%f'), '%Y-%m-%d'), 
             'plot': v['description'],
-            'program' : v['programCode']
+            'program' : v['programCode'] else None
         })
             
     return v_list
