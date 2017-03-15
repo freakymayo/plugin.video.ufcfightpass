@@ -193,17 +193,22 @@ def build_menu(items):
         except KeyError:
             thumb = scs if not is_folder else None
         # stupid encoding hack for now..
-        try:
+          try:
             i_title = i['title'].encode('utf-8')
         except:
             i_title = i['title']
         try:
-            if i['program'] in i['title']:
+            if i['program'] is None:
                 program = ''
-            else:
-                program = i['program'].encode('utf-8')
-        except KeyError:
-            program = ''    
+                
+            else:    
+                if i['program'] in i['title']:
+                    program = ''
+                else:
+                    program = i['program'].encode('utf-8')
+        except (KeyError, None):
+            program = ' '    
+           
         
             
         title = '[B][{0}][/B]  {1}'.format(i['airdate'], program + ' ' + i_title) if not is_folder else i_title
