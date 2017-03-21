@@ -114,7 +114,7 @@ def publish_point(video):
 
 
 def get_categories():
-    # Fetch the main UFC Fight Pass cat-a-ma-gories
+    # Fetch the main UFC Fight Pass category menu data
     url = c_base_url + 'fightpass?format=json'
     cj = cookielib.LWPCookieJar(COOKIE_FILE)
     try:
@@ -136,8 +136,14 @@ def get_categories():
     for c in data['subCategories']:
         results.append({
             'title': c['name'],
-            'url': c_base_url +  c['seoName']
+            'url': c_base_url +  c['seoName'].replace('FIGHTPASS-LIVE-EVENTS', 'LIVE-EVENTS')
         })
+
+    # append the Just Added category as well
+    results.append({
+        'title': 'Just Added', 
+        'url': c_base_url + 'JUST-ADDED'
+    })
 
     return results
 
@@ -165,13 +171,11 @@ def main():
             create_free_menu()
         else:
             # fetch the main categories to start, and display the main menu
-            # TODO: add featured categories like: Trending on Fight Pass, Recent Events etc
             categories = get_categories()
             build_menu(categories)
 
 
 def create_free_menu():
-    # TODO: this should load / save to cache as well? Refactor needed.
     data = get_data('http://www.ufc.tv/category/free-video')
     vids = get_parsed_vids(data)
     build_menu(vids)
@@ -180,7 +184,7 @@ def create_free_menu():
 def build_menu(items):
     listing = []
     first = items[0]
-    is_folder = 'id' not in first.keys()
+    is_folder = 'id' not in first
 
     for i in items:
         try:
@@ -197,6 +201,7 @@ def build_menu(items):
             i_title = i['title'].encode('utf-8')
         except:
             i_title = i['title']
+<<<<<<< HEAD
         try:
             if i['program'] is None:
                 program = ''
@@ -212,6 +217,19 @@ def build_menu(items):
         
             
         title = '[B][{0}][/B]  {1}'.format(i['airdate'], program + ' ' + i_title) if not is_folder else i_title
+=======
+
+        live_state = ''
+        if 'isLive' in i and i['isLive'] == 1:
+            live_state = ' - [COLOR green]LIVE NOW[/COLOR]'
+
+        if is_folder and 'Live Events' in i_title:
+            live_count = get_live_count()
+            title = '{0} [B][COLOR green]({1})[/COLOR][/B]'.format(i_title, live_count) if live_count > 0 else i_title
+        else:
+            title = '[B][{0}{1}][/B]  {2}'.format(i['airdate'], live_state, i_title) if not is_folder else i_title
+        
+>>>>>>> refs/remotes/portse/master
         item = xbmcgui.ListItem(label=title, thumbnailImage=thumb) 
 
         if is_folder:
@@ -225,12 +243,11 @@ def build_menu(items):
         xbmcplugin.addDirectoryItems(addon_handle, listing, len(listing))
         # force thumbnail view mode??
         #xbmc.executebuiltin('Container.SetViewMode(500)')
-        xbmcplugin.endOfDirectory(addon_handle)
+        xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
 
 def get_data(url):
     url = url + '?format=json'
-    print('get_data() url: ' + url)
     headers = {
         'User-Agent': ua
     }
@@ -251,10 +268,8 @@ def get_data(url):
 
 
 def get_parsed_subs(data):
-    #print('UFCFP: get_parsed_subs:')
-    #print(data)
     # if we're at video depth, signal as such
-    if 'programs' in data.keys():
+    if 'programs' in data or 'subCategories' not in data:
         return []
 
     subCategories = []
@@ -268,21 +283,59 @@ def get_parsed_subs(data):
 
     
 def get_parsed_vids(data):
+<<<<<<< HEAD
     #print('UFCFP: get_parsed_vids:')
     #print(data)
     img_base_url = 'https://neulionmdnyc-a.akamaihd.net/u/ufc/thumbs/' 
+=======
+    if 'programs' not in data:
+        return []
+
+    img_base_url = 'https://neulionmdnyc-a.akamaihd.net/u/ufc/thumbs/'
+>>>>>>> refs/remotes/portse/master
     v_list = []
+    
     for v in data['programs']:
+
+        if 'beginDateTime' in v:
+            v_date = v['beginDateTime']
+        else:
+            v_date  = v['releaseDate']
+
         v_list.append({
             'id': v['id'], 
-            'title': v['name'], 
+            'title': get_title(v), 
             'thumb': img_base_url + v['image'], 
+<<<<<<< HEAD
             'airdate': datetime.datetime.strftime(parse_date(v['releaseDate'], '%Y-%m-%dT%H:%M:%S.%f'), '%Y-%m-%d'), 
             'plot': v['description'],
             'program' : v['programCode'] else None
+=======
+            'airdate': datetime.datetime.strftime(parse_date(v_date, '%Y-%m-%dT%H:%M:%S.%f'), '%Y-%m-%d'), 
+            'plot': v['description'], 
+            'isLive': v['liveState'] if 'liveState' in v else 0
+>>>>>>> refs/remotes/portse/master
         })
-            
+          
     return v_list
+
+
+def get_title(program):
+    name  = program['name'].encode('utf-8')
+    if 'programCode' in program and program['programCode'].strip():
+        pcode = program['programCode'].encode('utf-8')
+        return '{0} - {1}'.format(pcode, name)
+    else:
+        return name
+
+
+def get_live_count():
+    try:
+        data = get_data(c_base_url + 'LIVE-EVENTS')
+        return sum(1 for i in data['programs'] if 'liveState' in i and i['liveState'] == 1)
+    except:
+        return 0
+
 
 def parse_date(dateString, format='%Y-%m-%d %H:%M:%S.%f'):
     try:
@@ -304,7 +357,11 @@ def traverse(url):
     print("UFCFP: Traversing categories for URL: " + url)
     # check / load from cache if available and prior to next refresh interval
     items  = None
-    cached = get_cacheItem(url)
+    cached = None
+
+    if should_cache(url):
+        cached = get_cacheItem(url)
+
     if cached and not needs_refresh(cached['lastCached']):
         items = cached['data']
         print('UFCFP: Using cached data..')
@@ -317,23 +374,32 @@ def traverse(url):
             print('UFCFP get_data() returned no data')
             dialog = xbmcgui.Dialog()
             dialog.ok('Error', 'Unable to load content. Check log for more details.')
+            return
 
         items = get_parsed_subs(data)
-        save_cacheItem(url, {
-            'data': items, 
-            'lastCached': str(datetime.datetime.now())
-        })
 
         if len(items) == 0:
             # no sub categories, so we're likely at video list depth
             items = get_parsed_vids(data)
+            if len(items) == 0:
+                dialog = xbmcgui.Dialog()
+                dialog.ok('No content', 'No content found.')
+                return
+
+        # save the sub-category or video list data to cache
+        if should_cache(url):
             save_cacheItem(url, {
                 'data': items, 
                 'lastCached': str(datetime.datetime.now())
             })
-            # TODO: sort??
 
     build_menu(items)
+
+
+def should_cache(url):
+    if 'LIVE-EVENTS' in url or 'JUST-ADDED' in url:
+        return False
+    return True
 
 
 def play_video(v_id, v_title):
