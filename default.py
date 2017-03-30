@@ -178,7 +178,6 @@ def build_menu(itemData):
     is_top_level = 'level' in first
 
     for i in itemData['items']:
-<<<<<<< HEAD
         try:
             if 'Replays' in i['name']:
                 thumb = i['thumb'].replace('es', 'ep')
@@ -187,9 +186,6 @@ def build_menu(itemData):
                
         except (KeyError, None):
             thumb = None
-=======
-        thumb = i['thumb'] if not is_folder else None
->>>>>>> refs/remotes/portse/master
         # stupid encoding hack for now..
         try:
             i_title = i['title'].encode('utf-8')
