@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 addon           = xbmcaddon.Addon(id='plugin.video.ufcfightpass')
 addon_url       = sys.argv[0]
 addon_handle    = int(sys.argv[1])
+addon_icon      = addon.getAddonInfo('icon')
 addon_BASE_PATH = xbmc.translatePath(xbmcaddon.Addon().getAddonInfo('profile'))
 COOKIE_FILE     = os.path.join(addon_BASE_PATH, 'cookies.lwp')
 CACHE_FILE      = os.path.join(addon_BASE_PATH, 'data.json')
@@ -25,10 +26,6 @@ def get_creds():
 
 def post_auth(creds):
     url = 'https://www.ufc.tv/page/fightpass' 
-    #ua = 'Mozilla/5.0 (iPad; CPU OS 8_3 like Mac OS X) AppleWebKit/600.1.4 (KHTML, like Gecko) Mobile/12F69'
-
-    #TODO: create a common func to load a session with cookies already set
-    #TODO: don't attempt to login unless we need to??
     cj = cookielib.LWPCookieJar(COOKIE_FILE)
     try:
         cj.load()
@@ -136,13 +133,15 @@ def get_categories():
     for c in data['subCategories']:
         results.append({
             'title': c['name'],
-            'url': c_base_url +  c['seoName'].replace('FIGHTPASS-LIVE-EVENTS', 'LIVE-EVENTS')
+            'url': c_base_url +  c['seoName'].replace('FIGHTPASS-LIVE-EVENTS', 'LIVE-EVENTS'),
+            'level': 'top'
         })
 
     # append the Just Added category as well
     results.append({
         'title': 'Just Added', 
-        'url': c_base_url + 'JUST-ADDED'
+        'url': c_base_url + 'JUST-ADDED', 
+        'level': 'top'
     })
 
     return results
@@ -185,6 +184,7 @@ def build_menu(items):
     listing = []
     first = items[0]
     is_folder = 'id' not in first
+    is_top_level = 'level' in first
 
     for i in items:
         try:
@@ -236,18 +236,42 @@ def build_menu(items):
             url = '{0}?action=traverse&u={1}&t={2}'.format(addon_url, i['url'], i_title)
         else:
             url = '{0}?action=play&i={1}&t={2}'.format(addon_url, i['id'], i_title)
+            # generate appropriate context menu
+            ctx = get_ctx_items(i)
+            if len(ctx) > 0:
+                item.addContextMenuItems(get_ctx_items(i), replaceItems=True)
 
         listing.append((url, item, is_folder))
 
+    if is_top_level:
+        # append My Queue menu item - refactor to allow pulling other single action based options like search
+        item = xbmcgui.ListItem(label='My Queue') 
+        listing.append(('{0}?action=queue'.format(addon_url), item, True))
+
     if len(listing) > 0:
         xbmcplugin.addDirectoryItems(addon_handle, listing, len(listing))
-        # force thumbnail view mode??
-        #xbmc.executebuiltin('Container.SetViewMode(500)')
         xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
 
 
-def get_data(url):
-    url = url + '?format=json'
+def get_ctx_items(item):
+    ctx = []
+    params = dict(parse_qsl(sys.argv[2][1:]))
+    if params and params['action'] == 'queue':
+        ctx_path = '{0}?action=queueDel&i={1}'.format(addon_url, item['id'])
+        ctx.append(('Remove from My Queue', 'XBMC.RunPlugin({0})'.format(ctx_path)))
+        ctx.append(('Refresh My Queue', 'Container.Refresh'))
+    else:
+        ctx_path = '{0}?action=queueSet&i={1}'.format(addon_url, item['id'])
+        ctx.append(('Add to My Queue', 'XBMC.RunPlugin({0})'.format(ctx_path)))
+    return ctx
+
+
+def get_data(url, params=None):
+    if params is None:
+        params = {
+            'format': 'json'
+        }
+
     headers = {
         'User-Agent': ua
     }
@@ -260,7 +284,27 @@ def get_data(url):
 
     s = requests.Session()
     s.cookies = cj
-    resp = s.get(url, headers=headers, verify=False)
+    resp = s.get(url, headers=headers, params=params, verify=False)
+    if not resp.status_code == 200:
+        return None
+
+    return resp.json()
+
+# refactor to consolidate common api client code..
+def post_data(url, payload):
+    headers = {
+        'User-Agent': ua
+    }
+
+    cj = cookielib.LWPCookieJar(COOKIE_FILE)
+    try:
+        cj.load(COOKIE_FILE, ignore_discard=True)
+    except:
+        pass
+
+    s = requests.Session()
+    s.cookies = cj
+    resp = s.post(url, data=payload, headers=headers, verify=True)
     if not resp.status_code == 200:
         return None
 
@@ -335,6 +379,80 @@ def get_live_count():
         return sum(1 for i in data['programs'] if 'liveState' in i and i['liveState'] == 1)
     except:
         return 0
+
+
+def load_queue():
+    queued = queue_get()
+    if len(queued) > 0:
+        build_menu(queued)
+    else:
+        xbmcplugin.endOfDirectory(addon_handle, cacheToDisc=False)
+
+
+def get_accessToken():
+    payload = {
+        'format': 'json'
+    }
+    data = post_data('https://www.ufc.tv/secure/accesstoken', payload)
+    if data and 'accessToken' in data['data']:
+        return data['data']['accessToken']
+    return None
+
+
+def queue_get():
+    q_data = get_pers('https://apis.neulion.com/personalization_ufc/v1/playlist/get')
+    if 'contents' in q_data:
+        q_ids = [q['id'] for q in q_data['contents']]
+
+        if len(q_ids) > 0:
+            ids = ','.join(q_ids)
+            results = get_data('https://ufc.tv/service/programs', params={
+                'ids': ids,
+                'format': 'json'
+            })
+            return get_parsed_vids(results)
+
+    return []
+
+
+def get_pers(url, pid=None, ptype=None, count=0):
+    token = get_accessToken()
+    params = {
+        'token': token
+    }
+
+    if pid and ptype:
+        params['id'] = pid
+        params['type'] = ptype
+        
+    data = get_data(url, params=params)
+
+    if 'result' in data and data['result'] == 'unauthorized': # status still 200??
+        if count < 3:  # allow 3 retries on failure before bailing
+            # we need to re-auth and update token
+            print('UFCFP: get_pers re-auth for token (retry %s/3)' %(count+1))
+            if post_auth(get_creds()):
+                return get_pers(url, pid, ptype, (count+1))
+        else:
+            return None
+
+    return data
+
+
+def queue_set(id):
+    resp = get_pers('https://apis.neulion.com/personalization_ufc/v1/playlist/set', id, 'program')
+    if 'result' in resp and resp['result'] == 'success': 
+        notify('Success', 'Video added to queue')
+    else:
+        notify('Error', 'Unable to add video to queue')
+
+
+def queue_del(id):
+    resp = get_pers('https://apis.neulion.com/personalization_ufc/v1/playlist/delete', id, 'program')
+    if 'result' in resp and resp['result'] == 'success':
+        xbmc.executebuiltin('Container.Refresh') 
+    else:
+        notify('Error', 'Unable to remove video from queue')
 
 
 def parse_date(dateString, format='%Y-%m-%d %H:%M:%S.%f'):
@@ -434,9 +552,17 @@ def router(paramstring):
             play_video(params['i'], params['t'])
         elif action == 'traverse':
             traverse(params['u'])
+        elif action == 'queue':
+            load_queue()
+        elif action == 'queueSet':
+            queue_set(params['i'])
+        elif action == "queueDel":
+            queue_del(params['i'])
     else:
         main()
 
+def notify(header, msg, wait=3000, icon=addon_icon):
+    xbmc.executebuiltin('Notification(%s,%s,%s,%s)' %(header, msg, wait, icon))
 
 
 # data caching layer -- should move this into another class..
