@@ -178,14 +178,7 @@ def build_menu(itemData):
     is_top_level = 'level' in first
 
     for i in itemData['items']:
-        try:
-            if 'Replays' in i['name']:
-                thumb = i['thumb'].replace('es', 'ep')
-            else:
-               thumb = i['thumb']
-               
-        except (KeyError, None):
-            thumb = None
+        thumb = i['thumb'] if not is_folder else None
         # stupid encoding hack for now..
         try:
             i_title = i['title'].encode('utf-8')
@@ -329,7 +322,7 @@ def get_parsed_vids(data):
 
     img_base_url = 'https://neulionmdnyc-a.akamaihd.net/u/ufc/thumbs/'
     v_list = []
-    
+    name = data['name']
     for v in data['programs']:
 
         if 'beginDateTime' in v:
@@ -340,11 +333,10 @@ def get_parsed_vids(data):
         v_list.append({
             'id': v['id'], 
             'title': get_title(v), 
-            'thumb': img_base_url + v['image'], 
+            'thumb': img_base_url + v['image'].replace('es', 'ep') if 'Replays' in name or 'Live' in name else img_base_url + v['image'].replace('es', 'ex'), 
             'airdate': datetime.datetime.strftime(parse_date(v_date, '%Y-%m-%dT%H:%M:%S.%f'), '%Y-%m-%d'), 
             'plot': v['description'], 
-            'isLive': v['liveState'] if 'liveState' in v else 0,
-            'name' : data['name']
+            'isLive': v['liveState'] if 'liveState' in v else 0
         })
       
     return {
