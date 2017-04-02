@@ -212,7 +212,12 @@ def build_menu(itemData):
         # append My Queue menu item - refactor to allow pulling other single action based options like search
         item = xbmcgui.ListItem(label='My Queue') 
         listing.append(('{0}?action=queue'.format(addon_url), item, True))
-
+        
+    if is_top_level:
+        url = '{0}?action=search&u={1}&t={2}'.format(addon_url,'UFC 27' , 'Search: UFC 27')
+        listing.append((url,xbmcgui.ListItem(label='Search',thumbnailImage=None),True))
+        
+        
     # generate paging navigation
     if 'paging' in itemData and itemData['paging']:
         pg_items = get_paging(itemData['paging'])
@@ -322,7 +327,11 @@ def get_parsed_vids(data):
 
     img_base_url = 'https://neulionmdnyc-a.akamaihd.net/u/ufc/thumbs/'
     v_list = []
-    name = data['name']
+    try:
+        name = data['name']
+    except KeyError:
+        name = ''
+    posters = 'Replays' or 'Live'
     for v in data['programs']:
 
         if 'beginDateTime' in v:
@@ -333,7 +342,7 @@ def get_parsed_vids(data):
         v_list.append({
             'id': v['id'], 
             'title': get_title(v), 
-            'thumb': img_base_url + v['image'].replace('es', 'ep') if 'Replays' in name or 'Live' in name else img_base_url + v['image'].replace('es', 'ex'), 
+            'thumb': img_base_url + v['image'].replace('es', 'ep') if 'Replays' in name or 'Live' in name else img_base_url + v['image'], 
             'airdate': datetime.datetime.strftime(parse_date(v_date, '%Y-%m-%dT%H:%M:%S.%f'), '%Y-%m-%d'), 
             'plot': v['description'], 
             'isLive': v['liveState'] if 'liveState' in v else 0
@@ -565,6 +574,13 @@ def router(paramstring):
             queue_del(params['i'])
         elif action == 'goto_pn':
             goto_page(params['u'], params['c'], params['m'])
+            
+        elif action == 'search':
+            keyboard = xbmc.Keyboard()
+            keyboard.doModal()
+            if keyboard.isConfirmed() and keyboard.getText():
+                query = keyboard.getText()
+                traverse('https://www.ufc.tv/search?param={}&format=json'.format(query))
 
     else:
         main()
